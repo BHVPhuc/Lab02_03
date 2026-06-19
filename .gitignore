@@ -1,0 +1,7 @@
+# ignore latex side files
+*.aux
+*.fdb_latexmk
+*.files
+*.log
+*.synctex.gz
+*.fls
