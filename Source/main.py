@@ -30,7 +30,7 @@ except ImportError:
     BackwardChainingSolver = None
 
 try:
-    from a_star_solver import AStarSolver
+    from astar_solver import AStarSolver
 except ImportError:
     AStarSolver = None
 
