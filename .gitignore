@@ -6,3 +6,6 @@
 *.synctex.gz
 *.fls
 Source/__pycache/
+__pycache__/
+Outputs/
+KB/
