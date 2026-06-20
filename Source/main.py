@@ -1,13 +1,46 @@
 import sys
 import os
+import threading
 import time
 import argparse
+import signal
 
 from puzzle import FutoshikiPuzzle
 from parser import read_input, save_solution
 
 # Import tat ca solvers (moi nguoi se viet file cua minh)
 # Hien tai chi co BruteForce va Backtracking, cac nguoi khac se them vao sau
+
+class TimeoutException(Exception):
+    pass
+
+def run_solver_with_timeout(solver, timeout_seconds):
+    """Run solver.solve() in a separate thread with timeout."""
+    result = [None]  # use list to store result
+    exception = [None]
+    
+    def target():
+        try:
+            result[0] = solver.solve()
+        except Exception as e:
+            exception[0] = e
+
+    thread = threading.Thread(target=target)
+    thread.start()
+    thread.join(timeout_seconds)
+    
+    if thread.is_alive():
+        # still running – timeout. Raise TimeoutException in the target thread to stop it
+        import ctypes
+        ctypes.pythonapi.PyThreadState_SetAsyncExc(
+            ctypes.c_long(thread.ident),
+            ctypes.py_object(TimeoutException)
+        )
+        raise TimeoutException(f"Solver timed out after {timeout_seconds} seconds")
+    if exception[0] is not None:
+        raise exception[0]
+    return result[0]
+
 try:
     from brute_force_solver import BruteForceSolver
 except ImportError:
@@ -49,40 +82,50 @@ if AStarSolver:
     AVAILABLE_SOLVERS['a_star'] = AStarSolver
 
 
-def run_solver(input_file: str, output_file: str, algorithm: str, **kwargs) -> dict:
+def run_solver(input_file: str, output_file: str, algorithm: str, 
+               timeout_seconds: int = 30, **kwargs) -> dict:
     """
-    Chay 1 thuat toan tren 1 test case
+    Chay 1 thuat toan tren 1 test case voi timeout (giay).
     
     Args:
         input_file: Duong dan file input
         output_file: Duong dan file output
         algorithm: Ten thuat toan ('brute_force', 'backtracking', 'forward_chaining', ...)
-        **kwargs: Cac tham so tuy chon cho tung thuat toan (vi du: use_mrv, use_forward_checking)
+        timeout_seconds: Thoi gian toi da cho phep chay (giay)
+        **kwargs: Cac tham so tuychon cho tung thuat toan (vi du: use_mrv, use_forward_checking)
     
     Returns:
         dict chua thong ke
     """
-    # Kiem tra thuat toan co ton tai khong
+
     if algorithm not in AVAILABLE_SOLVERS:
         raise ValueError(f"Thuat toan '{algorithm}' khong ton tai. "
-                        f"Cac thuat toan co san: {list(AVAILABLE_SOLVERS.keys())}")
+                         f"Cac thuat toan co san: {list(AVAILABLE_SOLVERS.keys())}")
     
     # 1. Doc input
     puzzle = read_input(input_file)
     
-    # 2. Tao solver va chay
+    # 2. Tao solver
     solver_class = AVAILABLE_SOLVERS[algorithm]
     solver = solver_class(puzzle, **kwargs)
     
+    # 3. Chay solver voi timeout
     start_time = time.time()
-    solution = solver.solve()
+    try:
+        solution = run_solver_with_timeout(solver, timeout_seconds)
+    except TimeoutException as e:
+        solution = None
+        print(f"  [Timeout] {algorithm} bi gioi han {timeout_seconds}s")
+    except Exception as e:
+        solution = None
+        print(f"  [Error] {algorithm}: {e}")
     end_time = time.time()
     
-    # 3. Xuat output
+    # 4. Xuat output
     if solution:
         save_solution(puzzle, solution.grid, output_file)
     
-    # 4. Tra ve thong ke
+    # 5. Thong ke
     stats = solver.get_stats()
     stats['time'] = end_time - start_time
     stats['input_file'] = input_file
@@ -117,12 +160,23 @@ def compare_all_algorithms(input_dir: str = 'Inputs', output_dir: str = 'Outputs
         input_path = os.path.join(input_dir, input_file)
         output_num = input_file.replace('input-', '').replace('.txt', '')
         
+        try:
+            puzzle = read_input(input_path)
+            n = puzzle.n
+        except Exception as e:
+            print(f"Loi doc file {input_file}: {e}")
+            continue
+            
         print(f"\n{'='*80}")
-        print(f"Test case: {input_file}")
+        print(f"Test case: {input_file} (N={n})")
         print(f"{'='*80}")
         
         # Chay tung thuat toan
         for algo_name in AVAILABLE_SOLVERS.keys():
+            if algo_name == 'a_star' and n >= 6:
+                print(f"[a_star] Bo qua (N={n} lon)")
+                continue
+                
             output_file = os.path.join(output_dir, f"output-{output_num}-{algo_name}.txt")
             
             try:
