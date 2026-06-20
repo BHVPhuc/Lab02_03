@@ -173,9 +173,9 @@ def compare_all_algorithms(input_dir: str = 'Inputs', output_dir: str = 'Outputs
         
         # Chay tung thuat toan
         for algo_name in AVAILABLE_SOLVERS.keys():
-            if algo_name == 'a_star' and n >= 6:
-                print(f"[a_star] Bo qua (N={n} lon)")
-                continue
+            # if algo_name == 'a_star' and n >= 6:
+            #     print(f"[a_star] Bo qua (N={n} lon)")
+            #     continue
                 
             output_file = os.path.join(output_dir, f"output-{output_num}-{algo_name}.txt")
             
