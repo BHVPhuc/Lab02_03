@@ -16,19 +16,20 @@ def main():
         return
         
     # Group data by algorithm
-    algorithms = {}
     test_cases = sorted(list(set([r['input_file'][-12:] for r in results]))) # input-01.txt, etc.
+    algo_names = list(set([r['algorithm'].split(' (')[0] for r in results]))
+    
+    algorithms = {algo: {'time': [0.0]*len(test_cases), 'nodes': [0]*len(test_cases)} for algo in algo_names}
+    tc_to_idx = {tc: i for i, tc in enumerate(test_cases)}
     
     for r in results:
-        algo = r['algorithm'].split(' (')[0] # Simplify name: 'Backtracking (MRV...)' -> 'Backtracking'
-        if algo not in algorithms:
-            algorithms[algo] = {'time': [], 'nodes': []}
-            
-        algorithms[algo]['time'].append(r['time'])
-        algorithms[algo]['nodes'].append(r['nodes_expanded'])
+        algo = r['algorithm'].split(' (')[0]
+        idx = tc_to_idx[r['input_file'][-12:]]
+        algorithms[algo]['time'][idx] = r['time']
+        algorithms[algo]['nodes'][idx] = r['nodes_expanded']
 
     x = np.arange(len(test_cases))
-    width = 0.2
+    width = 0.8 / len(algorithms) if algorithms else 0.2
     
     # 1. Plot Execution Time
     fig, ax = plt.subplots(figsize=(12, 6))
