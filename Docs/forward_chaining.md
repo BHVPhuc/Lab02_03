@@ -91,7 +91,7 @@ Bất kỳ con số nào vi phạm tính chất trên đều bị gạch bỏ kh
 
 ---
 
-### 2.5. Xử lý Điểm nghẽn (Search)
+### 2.5. Xử lý điểm nghẽn (search)
 
 #### `_search(self, domains) -> bool`
 
@@ -107,9 +107,9 @@ Khi bộ luật cạn kiệt thông tin mà không thể suy diễn tiếp (ví 
 ## 3. Độ phức tạp và Đánh giá
 
 ### Ưu điểm
-- Cơ chế tỉa cành (Pruning) nhờ Forward Chaining là cực kỳ mạnh mẽ. Nhờ việc tự động gạch bỏ các số sai từ sớm thông qua `_apply_inequality`, thuật toán tiết kiệm được hàng ngàn phép thử vô nghĩa.
-- Thể hiện sự vượt trội hoàn toàn so với Backward Chaining khi gặp những bài toán ít ràng buộc (Ví dụ `input-05`). Forward Chaining có thể giải `input-05` chỉ mất `0.003s`, trong khi Backward Chaining tốn hơn `1s`.
+- Cơ chế tỉa cành (Pruning) nhờ Forward Chaining, việc tự động gạch bỏ các số sai từ sớm thông qua `_apply_inequality`, thuật toán tiết kiệm được hàng ngàn phép thử vô nghĩa.
+- Thể hiện sự vượt trội hoàn toàn so với Backward Chaining khi gặp những bài toán ít ràng buộc (ví dụ `input-05`). Forward Chaining có thể giải `input-05` chỉ mất `0.003s`, trong khi Backward Chaining tốn hơn `1s`.
 
 ### Nhược điểm
-- Mặc dù số bước suy diễn (Inferences) ít hơn, nhưng mỗi bước suy diễn đòi hỏi thao tác quét trên Hàng, Cột và xử lý hàm `_apply_inequality` tương đối tốn tài nguyên (Overhead cao).
+- Mặc dù số bước suy diễn (inferences) ít hơn, nhưng mỗi bước suy diễn đòi hỏi thao tác quét trên hàng, cột và xử lý hàm `_apply_inequality` tương đối tốn tài nguyên (overhead cao).
 - Ở các test case có kích thước lớn và phải kết hợp Search đệ quy (`input-09`, `input-10`), thời gian thực thi có thể bị đẩy lên khoảng `0.01s` (chậm hơn một chút so với Backtracking tối ưu).

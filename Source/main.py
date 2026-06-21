@@ -8,9 +8,6 @@ import signal
 from puzzle import FutoshikiPuzzle
 from parser import read_input, save_solution
 
-# Import tat ca solvers (moi nguoi se viet file cua minh)
-# Hien tai chi co BruteForce va Backtracking, cac nguoi khac se them vao sau
-
 class TimeoutException(Exception):
     pass
 
@@ -26,11 +23,12 @@ def run_solver_with_timeout(solver, timeout_seconds):
             exception[0] = e
 
     thread = threading.Thread(target=target)
+    thread.daemon = True  # Đảm bảo dọn dẹp sạch sẽ luồng phụ khi main thread dừng
     thread.start()
     thread.join(timeout_seconds)
     
     if thread.is_alive():
-        # still running – timeout. Raise TimeoutException in the target thread to stop it
+        # Vẫn đang chạy -> timeout. Kích hoạt ngoại lệ bất đồng bộ để ngắt thread
         import ctypes
         ctypes.pythonapi.PyThreadState_SetAsyncExc(
             ctypes.c_long(thread.ident),
@@ -41,6 +39,7 @@ def run_solver_with_timeout(solver, timeout_seconds):
         raise exception[0]
     return result[0]
 
+# --- Dynamic Imports với cơ chế Fallback an toàn ---
 try:
     from brute_force_solver import BruteForceSolver
 except ImportError:
@@ -51,7 +50,6 @@ try:
 except ImportError:
     BacktrackingSolver = None
 
-# Cac solver khac se duoc them boi cac thanh vien khac trong nhom
 try:
     from forward_chaining import ForwardChainingSolver
 except ImportError:
@@ -67,95 +65,91 @@ try:
 except ImportError:
     AStarSolver = None
 
-
-# Dictionary mapping ten thuat toan -> class solver
+# Đăng ký danh sách thuật toán
 AVAILABLE_SOLVERS = {}
-if BruteForceSolver:
-    AVAILABLE_SOLVERS['brute_force'] = BruteForceSolver
-if BacktrackingSolver:
-    AVAILABLE_SOLVERS['backtracking'] = BacktrackingSolver
-if ForwardChainingSolver:
-    AVAILABLE_SOLVERS['forward_chaining'] = ForwardChainingSolver
-if BackwardChainingSolver:
-    AVAILABLE_SOLVERS['backward_chaining'] = BackwardChainingSolver
-if AStarSolver:
-    AVAILABLE_SOLVERS['a_star'] = AStarSolver
+if BruteForceSolver: AVAILABLE_SOLVERS['brute_force'] = BruteForceSolver
+if BacktrackingSolver: AVAILABLE_SOLVERS['backtracking'] = BacktrackingSolver
+if ForwardChainingSolver: AVAILABLE_SOLVERS['forward_chaining'] = ForwardChainingSolver
+if BackwardChainingSolver: AVAILABLE_SOLVERS['backward_chaining'] = BackwardChainingSolver
+if AStarSolver: AVAILABLE_SOLVERS['a_star'] = AStarSolver
 
 
 def run_solver(input_file: str, output_file: str, algorithm: str, 
                timeout_seconds: int = 30, **kwargs) -> dict:
     """
-    Chay 1 thuat toan tren 1 test case voi timeout (giay).
-    
-    Args:
-        input_file: Duong dan file input
-        output_file: Duong dan file output
-        algorithm: Ten thuat toan ('brute_force', 'backtracking', 'forward_chaining', ...)
-        timeout_seconds: Thoi gian toi da cho phep chay (giay)
-        **kwargs: Cac tham so tuychon cho tung thuat toan (vi du: use_mrv, use_forward_checking)
-    
-    Returns:
-        dict chua thong ke
+    Chạy 1 thuật toán trên 1 testcase có giới hạn thời gian (Timeout).
     """
-
     if algorithm not in AVAILABLE_SOLVERS:
         raise ValueError(f"Thuat toan '{algorithm}' khong ton tai. "
                          f"Cac thuat toan co san: {list(AVAILABLE_SOLVERS.keys())}")
     
-    # 1. Doc input
+    # 1. Đọc dữ liệu đầu vào
     puzzle = read_input(input_file)
     
-    # 2. Tao solver
+    # 2. Khởi tạo Solver tương ứng
     solver_class = AVAILABLE_SOLVERS[algorithm]
     solver = solver_class(puzzle, **kwargs)
     
-    # 3. Chay solver voi timeout
+    # 3. Thực thi thuật toán có giám sát thời gian
     start_time = time.time()
     is_timeout = False
+    solution = None
     try:
         solution = run_solver_with_timeout(solver, timeout_seconds)
-    except TimeoutException as e:
-        solution = None
+    except TimeoutException:
         is_timeout = True
         print(f"  [Timeout] {algorithm} bi gioi han {timeout_seconds}s")
     except Exception as e:
-        solution = None
         print(f"  [Error] {algorithm}: {e}")
     end_time = time.time()
     
-    # 4. Xuat output
-    if solution:
+    # 4. Ghi nhận kết quả nếu giải thành công
+    if solution and hasattr(solution, 'grid'):
         save_solution(puzzle, solution.grid, output_file)
     
-    # 5. Thong ke
-    stats = solver.get_stats()
+    # 5. Thu thập thông số thống kê an toàn
+    try:
+        stats = solver.get_stats()
+    except Exception:
+        # Fallback phòng trường hợp hàm get_stats() bị lỗi khi dính ngắt luồng đột ngột
+        stats = {'nodes_expanded': '-', 'backtracks': '-'}
+    
+    # Cập nhật thông số bắt buộc phục vụ việc vẽ biểu đồ và in bảng
+    stats['algorithm'] = algorithm  
     stats['time'] = end_time - start_time
     stats['input_file'] = input_file
-    stats['output_file'] = output_file if solution else None
-    stats['solution_found'] = solution is not None
-    stats['timeout'] = is_timeout
+    stats['output_file'] = output_file if (solution and not is_timeout) else None
+    stats['solution_found'] = (solution is not None) and (not is_timeout)
+    stats['is_timeout'] = is_timeout
+    
+    if is_timeout:
+        stats['time'] = float(timeout_seconds)
+        stats['nodes_expanded'] = stats.get('nodes_expanded', '-') or 'N/A'
     
     return stats
 
 
 def compare_all_algorithms(input_dir: str = 'Inputs', output_dir: str = 'Outputs', timeout_seconds: int = 30):
     """
-    So sanh TAT CA cac thuat toan co san tren tat ca test cases
-    Day la yeu cau cua de bai (phan "Comparison algorithms")
+    So sánh TẤT CẢ các thuật toán có sẵn trên toàn bộ các file testcases.
     """
     os.makedirs(output_dir, exist_ok=True)
     
+    if not os.path.exists(input_dir):
+        print(f"Thu muc {input_dir} khong ton tai!")
+        return
+        
     input_files = sorted([f for f in os.listdir(input_dir) 
                           if f.startswith('input-') and f.endswith('.txt')])
     
     if not input_files:
-        print(f"Khong tim thay file input trong {input_dir}")
+        print(f"Khong tim thay file input hop le trong thu muc: {input_dir}")
         return
     
     print("=" * 100)
     print("SO SANH HIEU SUAT CAC THUAT TOAN")
     print("=" * 100)
-    print(f"Cac thuat toan: {list(AVAILABLE_SOLVERS.keys())}")
+    print(f"Cac thuat toan hien co: {list(AVAILABLE_SOLVERS.keys())}")
     
     results = []
     
@@ -171,19 +165,13 @@ def compare_all_algorithms(input_dir: str = 'Inputs', output_dir: str = 'Outputs
             continue
             
         print(f"\n{'='*80}")
-        print(f"Test case: {input_file} (N={n})")
+        print(f"Test case: {input_file} (Grid size: {n}x{n})")
         print(f"{'='*80}")
         
-        # Chay tung thuat toan
         for algo_name in AVAILABLE_SOLVERS.keys():
-            # if algo_name == 'a_star' and n >= 6:
-            #     print(f"[a_star] Bo qua (N={n} lon)")
-            #     continue
-                
             output_file = os.path.join(output_dir, f"output-{output_num}-{algo_name}.txt")
             
             try:
-                # Cac tham so dac biet cho tung thuat toan
                 kwargs = {}
                 if algo_name == 'backtracking':
                     kwargs = {'use_mrv': True, 'use_forward_checking': True}
@@ -191,54 +179,45 @@ def compare_all_algorithms(input_dir: str = 'Inputs', output_dir: str = 'Outputs
                 stats = run_solver(input_path, output_file, algo_name, timeout_seconds=timeout_seconds, **kwargs)
                 results.append(stats)
                 
-                print(f"[{algo_name}] Time: {stats['time']:.4f}s, "
-                      f"Nodes: {stats['nodes_expanded']}, "
+                time_str = f"{stats['time']:.4f}s" if stats['solution_found'] else f"TIMEOUT (>{stats['time']:.1f}s)"
+                print(f"[{algo_name}] Time: {time_str}, "
+                      f"Nodes: {stats.get('nodes_expanded', '-')}, "
                       f"Backtracks: {stats.get('backtracks', '-')}")
                 
             except Exception as e:
-                print(f"[{algo_name}] LOI: {e}")
+                print(f"[{algo_name}] LOI THU THAP: {e}")
     
-    # In bang tong hop
+    # In bảng tổng hợp dữ liệu kết quả cuối cùng ra stdout để copy vào file Report
     print(f"\n{'='*100}")
-    print("BANG TONG HOP KET QUA")
+    print("BANG TONG HOP KET QUA THUONG NGHIEM (COPY VAO REPORT)")
     print(f"{'='*100}")
-    print(f"{'File':<15} {'Algorithm':<25} {'Time (s)':<12} {'Nodes':<10} {'Backtracks':<10}")
+    print(f"{'File':<15} {'Algorithm':<20} {'Time (s)':<15} {'Nodes':<12} {'Backtracks':<12}")
     print("-" * 100)
     
     for r in results:
         algo = r['algorithm']
-        if len(algo) > 24:
-            algo = algo[:21] + "..."
+        if len(algo) > 19:
+            algo = algo[:16] + "..."
+        
+        time_display = f"{r['time']:.4f}" if r['solution_found'] else "TIMEOUT"
+        nodes = str(r.get('nodes_expanded', '-'))
         backtracks = str(r.get('backtracks', '-'))
-        time_str = "TIMEOUT" if r.get('timeout', False) else f"{r['time']:.4f}"
+        time_display = "TIMEOUT" if r.get('is_timeout', False) else f"{r['time']:.4f}"
         print(f"{os.path.basename(r['input_file']):<15} {algo:<25} "
-              f"{time_str:<12} {r['nodes_expanded']:<10} {backtracks:<10}")
+              f"{time_display:<15} {nodes:<12} {backtracks:<12}")
     
     return results
 
 
 def main():
-    """
-    Entry point chinh
-    
-    Cach chay:
-    1. Chay 1 file voi thuat toan chi dinh:
-       python main.py -i input-01.txt -o output.txt -a backtracking
-       
-    2. So sanh tat ca thuat toan:
-       python main.py --compare-all
-       
-    3. Chay 1 thuat toan tren tat ca test cases:
-       python main.py -a brute_force --all-tests
-    """
     parser = argparse.ArgumentParser(description='Futoshiki Puzzle Solver')
     parser.add_argument('-i', '--input', help='File input (vi du: input-01.txt)')
     parser.add_argument('-o', '--output', default='output.txt', help='File output')
     parser.add_argument('-a', '--algorithm', default='backtracking', 
-                       choices=list(AVAILABLE_SOLVERS.keys()) + ['all'],
-                       help='Thuat toan su dung')
+                        choices=list(AVAILABLE_SOLVERS.keys()) + ['all'],
+                        help='Thuat toan su dung')
     parser.add_argument('--compare-all', action='store_true', 
-                       help='So sanh tat ca cac thuat toan')
+                        help='So sanh tat ca cac thuat toan')
     parser.add_argument('--all-tests', action='store_true',
                        help='Chay tren tat ca test cases')
     parser.add_argument('-t', '--timeout', type=int, default=30,
@@ -255,7 +234,6 @@ def main():
         compare_all_algorithms(input_dir, output_dir, args.timeout)
         
     elif args.all_tests and args.algorithm != 'all':
-        # Chay 1 thuat toan tren tat ca test cases
         os.makedirs(output_dir, exist_ok=True)
         input_files = sorted([f for f in os.listdir(input_dir) 
                               if f.startswith('input-') and f.endswith('.txt')])
@@ -270,11 +248,12 @@ def main():
             
             if stats['solution_found']:
                 print(f"[OK] Giai thanh cong! Time: {stats['time']:.4f}s")
+            elif stats.get('is_timeout', False):
+                print(f"[TIMEOUT] Thuat toan bi ngat vi chay vuat qua thoi gian quy dinh.")
             else:
-                print(f"[FAIL] Khong tim duoc loi giai")
+                print(f"[FAIL] Khong co loi giai trong thoi gian cho phep.")
                 
     elif args.input:
-        # Chay 1 file
         input_path = os.path.join(input_dir, args.input) if not os.path.isabs(args.input) else args.input
         
         if args.output == 'output.txt':
@@ -289,16 +268,16 @@ def main():
         if stats['solution_found']:
             print(f"[OK] Giai thanh cong!")
             print(f"  Thoi gian: {stats['time']:.4f}s")
-            print(f"  Nodes expanded: {stats['nodes_expanded']}")
+            print(f"  Nodes expanded: {stats.get('nodes_expanded', '-')}")
             if 'backtracks' in stats:
                 print(f"  Backtracks: {stats['backtracks']}")
-            print(f"  Output saved to file")
+        elif stats.get('is_timeout', False):  # ĐÃ SỬA: Đổi từ r.get thành stats.get
+            print(f"[TIMEOUT] Thuat toan bi ngat sau {stats['time']:.1f}s")
         else:
-            print(f"[FAIL] Khong tim duoc loi giai")
+            print(f"[FAIL] Thuat toan chay xong nhung KHONG TIM DUOC LOI GIAI.")
             
     else:
-        # Mac dinh: so sanh tat ca
-        print("Khong co tham so. Dang chay so sanh tat ca cac thuat toan...")
+        print("Khong co tham so hop le. Tu dong chay che do so sanh tat ca...")
         compare_all_algorithms(input_dir, output_dir, args.timeout)
 
 
