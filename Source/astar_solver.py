@@ -1,5 +1,4 @@
 import heapq
-import copy
 from typing import List, Tuple, Optional
 
 from puzzle import FutoshikiPuzzle
@@ -10,98 +9,174 @@ class AStarSolver:
         self.nodes_expanded = 0
         self.solution = None
 
+
     def freeze_state(self, grid: List[List[int]]) -> Tuple[Tuple[int, ...], ...]:
         return tuple(tuple(row) for row in grid)
-    
+
+    def get_domain(
+        self,
+        puzzle: FutoshikiPuzzle,
+        row: int,
+        col: int
+    ) -> List[int]:
+        return [
+            val
+            for val in range(1, puzzle.n + 1)
+            if puzzle.is_valid(row, col, val)
+        ]
+
     def heuristic_2(self, puzzle: FutoshikiPuzzle) -> float:
+        """
+        Heuristic:
+        - Số ô trống còn lại.
+        - Nếu tồn tại ô có domain rỗng => dead-end.
+        """
         empty_count = 0
-        n = puzzle.n 
-        
-        for r in range(n):
-            for c in range(n):
+
+        for r in range(puzzle.n):
+            for c in range(puzzle.n):
+
                 if puzzle.grid[r][c] == 0:
+
                     empty_count += 1
-                    
-                    valid_options = 0
-                    for val in range(1, n + 1):
-                        if puzzle.is_valid(r, c, val):
-                            valid_options += 1
-                    
-                    if valid_options == 0:
-                        return float('inf') 
-                        
+
+                    domain = self.get_domain(puzzle, r, c)
+
+                    if len(domain) == 0:
+                        return float('inf')
+
         return empty_count
 
-    def find_empty_cell(self, puzzle: FutoshikiPuzzle) -> Tuple[int, int]:
-        n = puzzle.n
-        best_r, best_c = -1, -1
+    def find_empty_cell(
+        self,
+        puzzle: FutoshikiPuzzle
+    ) -> Tuple[int, int, List[int]]:
+
+        best_r = -1
+        best_c = -1
+        best_domain = []
+
         min_options = float('inf')
 
-        for r in range(n):
-            for c in range(n):
+        for r in range(puzzle.n):
+            for c in range(puzzle.n):
+
                 if puzzle.grid[r][c] == 0:
-                    valid_count = 0
-                    for val in range(1, n + 1):
-                        if puzzle.is_valid(r, c, val):
-                            valid_count += 1
-                    
-                    if valid_count < min_options:
-                        min_options = valid_count
-                        best_r, best_c = r, c
-                        
-                        if min_options <= 1:
-                            return best_r, best_c
-                            
-        return best_r, best_c
+
+                    domain = self.get_domain(puzzle, r, c)
+                    domain_size = len(domain)
+
+                    if domain_size < min_options:
+
+                        min_options = domain_size
+                        best_r = r
+                        best_c = c
+                        best_domain = domain
+
+                        # MRV Early Exit
+                        if domain_size <= 1:
+                            return best_r, best_c, best_domain
+
+        return best_r, best_c, best_domain
 
     def solve(self) -> Optional[FutoshikiPuzzle]:
+
         self.nodes_expanded = 0
         self.solution = None
+
         queue = []
-        tie_breaker = 0 
-        
+        tie_breaker = 0
+
         initial_puzzle = self.original.clone()
-        initial_g = 0
+
         initial_h = self.heuristic_2(initial_puzzle)
-        
-        heapq.heappush(queue, (initial_g + initial_h, tie_breaker, initial_g, initial_puzzle))
-        
-        visited = set()
-        visited.add(self.freeze_state(initial_puzzle.grid))
+
+        heapq.heappush(
+            queue,
+            (
+                initial_h,
+                0,
+                tie_breaker,
+                0,
+                initial_puzzle
+            )
+        )
+
+        # Closed list chuẩn A*
+        closed_set = set()
 
         while queue:
-            f, _, g, current_puzzle = heapq.heappop(queue)
+
+            (
+                f,
+                _domain_size,
+                _,
+                g,
+                current_puzzle
+            ) = heapq.heappop(queue)
+
+            current_state = self.freeze_state(
+                current_puzzle.grid
+            )
+
+            if current_state in closed_set:
+                continue
+
+            closed_set.add(current_state)
+
             self.nodes_expanded += 1
 
-            # Đã tìm thấy đích
+            # Goal test
             if current_puzzle.is_complete():
                 self.solution = current_puzzle
                 return current_puzzle
 
-            row, col = self.find_empty_cell(current_puzzle)
-            
-            if row != -1:
-                for val in range(1, current_puzzle.n + 1):
-                    if current_puzzle.is_valid(row, col, val):
-                        next_puzzle = current_puzzle.clone()
-                        next_puzzle.grid[row][col] = val
-                        
-                        frozen = self.freeze_state(next_puzzle.grid)
-                        if frozen not in visited:
-                            next_h = self.heuristic_2(next_puzzle)
-                            if next_h != float('inf'):
-                                visited.add(frozen)
-                                next_g = g + 1
-                                tie_breaker += 1
-                                heapq.heappush(queue, (next_g + next_h, tie_breaker, next_g, next_puzzle))
-                            
-        # Không tìm thấy lời giải
+            row, col, domain = self.find_empty_cell(
+                current_puzzle
+            )
+
+            if row == -1:
+                continue
+
+            for val in domain:
+
+                next_puzzle = current_puzzle.clone()
+                next_puzzle.grid[row][col] = val
+
+                frozen = self.freeze_state(
+                    next_puzzle.grid
+                )
+
+                if frozen in closed_set:
+                    continue
+
+                next_h = self.heuristic_2(next_puzzle)
+
+                # Dead-end
+                if next_h == float('inf'):
+                    continue
+
+                next_g = g + 1
+
+                tie_breaker += 1
+
+                heapq.heappush(
+                    queue,
+                    (
+                        next_g + next_h,
+                        len(domain),
+                        tie_breaker,
+                        next_g,
+                        next_puzzle
+                    )
+                )
+
         return None
 
     def get_stats(self) -> dict:
-        """Hàm giao tiếp với main.py để báo cáo số liệu"""
         return {
-            'algorithm': 'A* (Heuristic 2)',
+            'algorithm': 'A* (Heuristic 2 + MRV)',
             'nodes_expanded': self.nodes_expanded,
             'solution_found': self.solution is not None
         }
+
