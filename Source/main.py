@@ -90,11 +90,14 @@ def run_solver(input_file: str, output_file: str, algorithm: str,
     solver_class = AVAILABLE_SOLVERS[algorithm]
     solver = solver_class(puzzle, **kwargs)
     
+    if algorithm == 'backward_chaining':
+        if hasattr(solver, 'demonstrate_queries'):
+            print("\n" + solver.demonstrate_queries())
+            
     # 3. Thực thi thuật toán có giám sát thời gian
     start_time = time.time()
     is_timeout = False
     solution = None
-    
     try:
         solution = run_solver_with_timeout(solver, timeout_seconds)
     except TimeoutException:
@@ -121,7 +124,7 @@ def run_solver(input_file: str, output_file: str, algorithm: str,
     stats['input_file'] = input_file
     stats['output_file'] = output_file if (solution and not is_timeout) else None
     stats['solution_found'] = (solution is not None) and (not is_timeout)
-    stats['is_timeout'] = is_timeout  # ĐÃ SỬA: Lưu trạng thái timeout vào stats
+    stats['is_timeout'] = is_timeout
     
     if is_timeout:
         stats['time'] = float(timeout_seconds)
@@ -130,7 +133,7 @@ def run_solver(input_file: str, output_file: str, algorithm: str,
     return stats
 
 
-def compare_all_algorithms(input_dir: str = 'Inputs', output_dir: str = 'Outputs'):
+def compare_all_algorithms(input_dir: str = 'Inputs', output_dir: str = 'Outputs', timeout_seconds: int = 30):
     """
     So sánh TẤT CẢ các thuật toán có sẵn trên toàn bộ các file testcases.
     """
@@ -177,7 +180,7 @@ def compare_all_algorithms(input_dir: str = 'Inputs', output_dir: str = 'Outputs
                 if algo_name == 'backtracking':
                     kwargs = {'use_mrv': True, 'use_forward_checking': True}
                 
-                stats = run_solver(input_path, output_file, algo_name, **kwargs)
+                stats = run_solver(input_path, output_file, algo_name, timeout_seconds=timeout_seconds, **kwargs)
                 results.append(stats)
                 
                 time_str = f"{stats['time']:.4f}s" if stats['solution_found'] else f"TIMEOUT (>{stats['time']:.1f}s)"
@@ -203,8 +206,8 @@ def compare_all_algorithms(input_dir: str = 'Inputs', output_dir: str = 'Outputs
         time_display = f"{r['time']:.4f}" if r['solution_found'] else "TIMEOUT"
         nodes = str(r.get('nodes_expanded', '-'))
         backtracks = str(r.get('backtracks', '-'))
-        
-        print(f"{os.path.basename(r['input_file']):<15} {algo:<20} "
+        time_display = "TIMEOUT" if r.get('is_timeout', False) else f"{r['time']:.4f}"
+        print(f"{os.path.basename(r['input_file']):<15} {algo:<25} "
               f"{time_display:<15} {nodes:<12} {backtracks:<12}")
     
     return results
@@ -220,7 +223,9 @@ def main():
     parser.add_argument('--compare-all', action='store_true', 
                         help='So sanh tat ca cac thuat toan')
     parser.add_argument('--all-tests', action='store_true',
-                        help='Chay tren tat ca test cases')
+                       help='Chay tren tat ca test cases')
+    parser.add_argument('-t', '--timeout', type=int, default=30,
+                       help='Thoi gian gioi han cho moi thuat toan (giay)')
     
     args = parser.parse_args()
     
@@ -229,7 +234,8 @@ def main():
     output_dir = os.path.join(script_dir, 'Outputs')
     
     if args.compare_all:
-        compare_all_algorithms(input_dir, output_dir)
+        # So sanh tat ca thuat toan (yeu cau de bai)
+        compare_all_algorithms(input_dir, output_dir, args.timeout)
         
     elif args.all_tests and args.algorithm != 'all':
         os.makedirs(output_dir, exist_ok=True)
@@ -242,7 +248,7 @@ def main():
             output_file = os.path.join(output_dir, f"output-{output_num}-{args.algorithm}.txt")
             
             print(f"\nDang giai {input_file} bang {args.algorithm}...")
-            stats = run_solver(input_path, output_file, args.algorithm)
+            stats = run_solver(input_path, output_file, args.algorithm, timeout_seconds=args.timeout)
             
             if stats['solution_found']:
                 print(f"[OK] Giai thanh cong! Time: {stats['time']:.4f}s")
@@ -261,7 +267,7 @@ def main():
             output_path = os.path.join(output_dir, args.output) if not os.path.isabs(args.output) else args.output
         
         print(f"\nDang giai: {args.input} bang {args.algorithm}")
-        stats = run_solver(input_path, output_path, args.algorithm)
+        stats = run_solver(input_path, output_path, args.algorithm, timeout_seconds=args.timeout)
         
         if stats['solution_found']:
             print(f"[OK] Giai thanh cong!")
@@ -276,7 +282,7 @@ def main():
             
     else:
         print("Khong co tham so hop le. Tu dong chay che do so sanh tat ca...")
-        compare_all_algorithms(input_dir, output_dir)
+        compare_all_algorithms(input_dir, output_dir, args.timeout)
 
 
 if __name__ == '__main__':

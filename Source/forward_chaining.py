@@ -55,11 +55,19 @@ class ForwardChainingSolver:
                     return False
         return True
 
-    def _forward_chain(self, domains):
-        queue = [(r, c) for r in range(self.n) for c in range(self.n)]
-        
+    def _forward_chain(self, domains, initial_queue=None):
+        if initial_queue is None:
+            queue = [(r, c) for r in range(self.n) for c in range(self.n)]
+        else:
+            queue = list(initial_queue)
+            
+        in_queue = [[False] * self.n for _ in range(self.n)]
+        for r, c in queue:
+            in_queue[r][c] = True
+            
         while queue:
             r, c = queue.pop(0)
+            in_queue[r][c] = False
             self.inferences_count += 1
             
             # 1. Ràng buộc duy nhất trên Hàng và Cột
@@ -71,14 +79,18 @@ class ForwardChainingSolver:
                     if c != c2 and val in domains[r][c2]:
                         domains[r][c2].remove(val)
                         if not domains[r][c2]: return False # Mâu thuẫn
-                        if (r, c2) not in queue: queue.append((r, c2))
+                        if not in_queue[r][c2]: 
+                            queue.append((r, c2))
+                            in_queue[r][c2] = True
                         
                 # Check cột
                 for r2 in range(self.n):
                     if r != r2 and val in domains[r2][c]:
                         domains[r2][c].remove(val)
                         if not domains[r2][c]: return False # Mâu thuẫn
-                        if (r2, c) not in queue: queue.append((r2, c))
+                        if not in_queue[r2][c]: 
+                            queue.append((r2, c))
+                            in_queue[r2][c] = True
 
             # 2. Ràng buộc ngang (Horizontal)
             if c < self.n - 1:
@@ -86,16 +98,24 @@ class ForwardChainingSolver:
                 if h_val != 0:
                     changed_left, changed_right = self._apply_inequality(domains, r, c, r, c + 1, h_val)
                     if changed_left == -1: return False
-                    if changed_left and (r, c) not in queue: queue.append((r, c))
-                    if changed_right and (r, c + 1) not in queue: queue.append((r, c + 1))
+                    if changed_left and not in_queue[r][c]: 
+                        queue.append((r, c))
+                        in_queue[r][c] = True
+                    if changed_right and not in_queue[r][c+1]: 
+                        queue.append((r, c + 1))
+                        in_queue[r][c+1] = True
             
             if c > 0:
                 h_val = self.puzzle.h_constraints[r][c - 1]
                 if h_val != 0:
                     changed_left, changed_right = self._apply_inequality(domains, r, c - 1, r, c, h_val)
                     if changed_right == -1: return False
-                    if changed_left and (r, c - 1) not in queue: queue.append((r, c - 1))
-                    if changed_right and (r, c) not in queue: queue.append((r, c))
+                    if changed_left and not in_queue[r][c-1]: 
+                        queue.append((r, c - 1))
+                        in_queue[r][c-1] = True
+                    if changed_right and not in_queue[r][c]: 
+                        queue.append((r, c))
+                        in_queue[r][c] = True
 
             # 3. Ràng buộc dọc (Vertical)
             if r < self.n - 1:
@@ -103,16 +123,24 @@ class ForwardChainingSolver:
                 if v_val != 0:
                     changed_top, changed_bottom = self._apply_inequality(domains, r, c, r + 1, c, v_val)
                     if changed_top == -1: return False
-                    if changed_top and (r, c) not in queue: queue.append((r, c))
-                    if changed_bottom and (r + 1, c) not in queue: queue.append((r + 1, c))
+                    if changed_top and not in_queue[r][c]: 
+                        queue.append((r, c))
+                        in_queue[r][c] = True
+                    if changed_bottom and not in_queue[r+1][c]: 
+                        queue.append((r + 1, c))
+                        in_queue[r+1][c] = True
                     
             if r > 0:
                 v_val = self.puzzle.v_constraints[r - 1][c]
                 if v_val != 0:
                     changed_top, changed_bottom = self._apply_inequality(domains, r - 1, c, r, c, v_val)
                     if changed_bottom == -1: return False
-                    if changed_top and (r - 1, c) not in queue: queue.append((r - 1, c))
-                    if changed_bottom and (r, c) not in queue: queue.append((r, c))
+                    if changed_top and not in_queue[r-1][c]: 
+                        queue.append((r - 1, c))
+                        in_queue[r-1][c] = True
+                    if changed_bottom and not in_queue[r][c]: 
+                        queue.append((r, c))
+                        in_queue[r][c] = True
 
         return True
 
@@ -154,6 +182,14 @@ class ForwardChainingSolver:
             
         return changed1, changed2
 
+    def _get_degree(self, r, c):
+        deg = 0
+        if c < self.n - 1 and self.puzzle.h_constraints[r][c] != 0: deg += 1
+        if c > 0 and self.puzzle.h_constraints[r][c-1] != 0: deg += 1
+        if r < self.n - 1 and self.puzzle.v_constraints[r][c] != 0: deg += 1
+        if r > 0 and self.puzzle.v_constraints[r-1][c] != 0: deg += 1
+        return deg
+
     def _search(self, domains):
         if self._is_solved(domains):
             self.domains = domains
@@ -161,21 +197,30 @@ class ForwardChainingSolver:
             
         min_len = self.n + 1
         best_r, best_c = -1, -1
+        max_deg = -1
         
         for r in range(self.n):
             for c in range(self.n):
-                if 1 < len(domains[r][c]) < min_len:
-                    min_len = len(domains[r][c])
-                    best_r, best_c = r, c
-                    
+                if 1 < len(domains[r][c]):
+                    curr_len = len(domains[r][c])
+                    if curr_len < min_len:
+                        min_len = curr_len
+                        max_deg = self._get_degree(r, c)
+                        best_r, best_c = r, c
+                    elif curr_len == min_len:
+                        deg = self._get_degree(r, c)
+                        if deg > max_deg:
+                            max_deg = deg
+                            best_r, best_c = r, c
+                            
         if best_r == -1:
             return False
             
         for val in domains[best_r][best_c]:
-            dom_copy = copy.deepcopy(domains)
+            dom_copy = [[domains[r][c][:] for c in range(self.n)] for r in range(self.n)]
             dom_copy[best_r][best_c] = [val]
             
-            if self._forward_chain(dom_copy):
+            if self._forward_chain(dom_copy, initial_queue=[(best_r, best_c)]):
                 if self._search(dom_copy):
                     return True
                     

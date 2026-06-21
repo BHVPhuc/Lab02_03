@@ -122,6 +122,7 @@ class FutoshikiGUI:
         self.canvas = tk.Canvas(display_frame, width=400, height=400, bg='white', 
                                highlightthickness=2, highlightbackground='#3498db')
         self.canvas.pack(expand=True, fill='both')
+        self.canvas.bind("<Button-1>", self.on_canvas_click)
         
         # ===== PHẦN THỐNG KÊ =====
         stats_frame = ttk.LabelFrame(main_frame, text="Statistics", padding="10")
@@ -146,6 +147,38 @@ class FutoshikiGUI:
         # ===== NÚT THOÁT =====
         self.exit_btn = ttk.Button(main_frame, text="Thoát", command=self.root.quit)
         self.exit_btn.grid(row=6, column=2, sticky=tk.E, pady=(10, 0))
+    
+    def on_canvas_click(self, event):
+        """Xử lý sự kiện click trên canvas để demo query cell"""
+        if not self.puzzle:
+            return
+            
+        if self.solution:
+            return  # Không query nếu đã giải xong
+            
+        n = self.puzzle.n
+        cell_size = min(360 // n, 60)
+        offset_x = (400 - n * cell_size) // 2
+        offset_y = (400 - n * cell_size) // 2
+        
+        # Tính toán tọa độ row, col từ event click
+        c = int((event.x - offset_x) / cell_size)
+        r = int((event.y - offset_y) / cell_size)
+        
+        if 0 <= r < n and 0 <= c < n:
+            algorithm = self.algo_var.get()
+            if algorithm == 'backward_chaining':
+                # Demo query trực tiếp
+                solver_class = AVAILABLE_SOLVERS['backward_chaining']
+                solver = solver_class(self.puzzle)
+                
+                if self.puzzle.grid[r][c] != 0:
+                    self.log(f"🔍 Demo Query: Cell ({r}, {c}) đã có sẵn giá trị là {self.puzzle.grid[r][c]}")
+                else:
+                    possible_values = solver.query_possible_values(r, c)
+                    self.log(f"🔍 Demo Query: Các giá trị hợp lệ cho ô trống ({r}, {c}) là {possible_values}")
+            else:
+                self.log(f"🖱️ Clicked cell ({r}, {c}). (Chọn 'backward_chaining' để xem demo tính năng query nhé!)")
     
     def log(self, message):
         """Thêm log vào text area"""
@@ -272,16 +305,22 @@ class FutoshikiGUI:
                 kwargs = {'use_mrv': True, 'use_forward_checking': True}
             
             solver = solver_class(self.puzzle, **kwargs)
+            
+            demo_text = ""
+            if algorithm == 'backward_chaining':
+                if hasattr(solver, 'demonstrate_queries'):
+                    demo_text = solver.demonstrate_queries()
+                    
             solution = solver.solve()
             end_time = time.time()
             
             # Cap nhat GUI tu main thread
-            self.root.after(0, self._update_result, solution, solver, end_time - start_time)
+            self.root.after(0, self._update_result, solution, solver, end_time - start_time, demo_text)
             
         except Exception as e:
             self.root.after(0, self._show_error, str(e))
     
-    def _update_result(self, solution, solver, elapsed_time):
+    def _update_result(self, solution, solver, elapsed_time, demo_text=""):
         """Cập nhật kết quả lên GUI"""
         self.solve_btn.config(state='normal')
         
@@ -300,6 +339,9 @@ Nodes expanded: {stats['nodes_expanded']}
 """
             if 'backtracks' in stats:
                 stats_text += f"Backtracks: {stats['backtracks']}\n"
+                
+            if demo_text:
+                stats_text += f"\n{demo_text}\n"
             
             self.update_stats(stats_text)
             
