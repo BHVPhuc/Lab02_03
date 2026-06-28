@@ -40,8 +40,11 @@ Tham so:
 
 Vi du:
 ```bash
-python main.py -i input-05.txt -o output-05.txt -a brute_force
-python main.py -i input-09.txt -o output-09.txt -a backtracking
+python main.py -i input-01.txt -o output-01.txt -a brute_force
+python main.py -i input-02.txt -o output-02.txt -a backtracking
+python main.py -i input-03.txt -o output-03.txt -a forward_chaining
+python main.py -i input-04.txt -o output-04.txt -a backward_chaining
+python main.py -i input-05.txt -o output-05.txt -a a_star
 ```
 
 ### 2. So sanh tat ca thuat toan
@@ -65,15 +68,6 @@ python main.py
 ```
 
 Neu khong truyen tham so, se tu dong chay `--compare-all`.
-
-## Cac thuat toan co san
-
-| Ten | Mo ta |
-|-----|-------|
-| `brute_force` | Thu tat ca to hop (chi nen dung voi N <= 4) |
-| `backtracking` | Backtracking + MRV + Forward Checking |
-
-*Cac thuat toan khac (forward_chaining, backward_chaining, a_star) se duoc them boi cac thanh vien trong nhom.*
 
 ## Vi du chay thu
 
